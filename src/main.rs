@@ -20,10 +20,9 @@ fn main() -> io::Result<()> {
     let mut f = File::open(f)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
-    let mut memory: Vec<u8> = Vec::new();
-    let mut mmu = Mmu::new(memory);
+    let mut memory: Vec<u8> = Vec::with_capacity(1000);
+    let mut mmu = Mmu::new(buf);
     let mut cpu = Cpu::new(0, [0;32], mmu);
     cpu.execute()?;
-    println!("{:?}",buf);
     Ok(())
 }

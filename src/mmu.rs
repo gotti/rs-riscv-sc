@@ -11,7 +11,7 @@ impl Mmu{
         let n :usize = n as usize;
         let mut result = 0_u64;
         for i in 0..n {
-            result += (self.mem[i+p] as u64) << (8*n);
+            result += (self.mem[i+p] as u64) << (8*i);
         }
         result
     }

@@ -63,7 +63,7 @@ mod f3r {
 
 pub struct Cpu {
     pc: u64,
-    next_pc: u64,
+    CSR: [u64; 4096],
     register: [u64; 32],
     mmu: Mmu,
 }
@@ -72,33 +72,40 @@ impl Cpu {
     pub fn new(pc: u64, register: [u64; 32], mmu: Mmu) -> Cpu {
         Cpu {
             pc,
-            next_pc: pc + 4,
             register,
             mmu,
         }
     }
     pub fn execute(&mut self) -> io::Result<()> {
-        let inst = self.fetch();
-        match self.exec(inst) {
-            Ok(()) => {}
-            Err(()) => {}
+        loop {
+            let old_pc = self.pc;
+            let (inst,op_len) = self.fetch();
+            match self.exec(inst) {
+                Ok(()) => {}
+                Err(()) => {
+                    println!("Error");
+                }
+            }
+            if old_pc == self.pc {
+                self.pc += op_len;
+            }
         }
         Ok(())
     }
 
-    fn fetch(&mut self) -> u64 {
-        self.pc = self.next_pc;
+    fn fetch(&mut self) -> (u64, u64) {
         let inst = self.mmu.read_nbytes(self.pc, 4);
         let op_length = parse_inst_length(inst);
-        self.next_pc += op_length;
-        inst
+        println!("inst: {:#x}", inst);
+        println!("pc  : {:#x}", self.pc);
+        (inst, op_length)
     }
     fn exec(&mut self, inst: u64) -> Result<(), ()> {
         let op_length = parse_inst_length(inst);
         match op_length {
             2 => {
                 //TODO: implement compressed op
-                Ok(())
+                Err(())
             }
             4 => match self.exec_rv32(inst as u32) {
                 Ok(()) => Ok(()),
@@ -109,6 +116,7 @@ impl Cpu {
         }
     }
     fn exec_rv32(&mut self, inst: u32) -> Result<(), ()> {
+        println!("{:x}", rv32::get_op(inst));
         match rv32::get_op(inst) {
             op::LUDI => {
                 self.register[rv32::get_rd(inst)] =
@@ -121,6 +129,11 @@ impl Cpu {
             op::JAL => {
                 self.register[rv32::get_rd(inst)] = self.pc + 4;
                 self.pc += rv32::get_imm_jal(inst) as u64;
+                println!(
+                    "JAL x{:x}, 0x{:x}",
+                    rv32::get_rd(inst),
+                    rv32::get_imm_jal(inst)
+                )
             }
             op::JALR => {
                 self.register[rv32::get_rd(inst)] = self.pc + 4;
@@ -172,6 +185,7 @@ impl Cpu {
                     }
                 }
                 _ => {
+                    println!("not found");
                     return Err(());
                 }
             },
@@ -209,6 +223,7 @@ impl Cpu {
                     self.register[rv32::get_rs1(inst) as usize] = data as u64;
                 }
                 _ => {
+                    println!("not found");
                     return Err(());
                 }
             },
@@ -281,21 +296,23 @@ impl Cpu {
                             & (rv32::get_bits(inst, 31, 20))) as u64;
                 }
                 _ => {
+                    println!("not found");
                     return Err(());
                 }
             },
             op::AREG => match rv32::get_funct3(inst) {
-                f3r::ADD_SUB => {
-                }
+                f3r::ADD_SUB => {}
                 _ => {
+                    println!("not found");
                     return Err(());
                 }
-            }
+            },
             _ => {
+                println!("not found");
                 return Err(());
             }
         }
-        return Err(());
+        return Ok(());
     }
 }
 
