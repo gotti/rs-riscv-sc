@@ -22,7 +22,7 @@ fn main() -> io::Result<()> {
     f.read_to_end(&mut buf)?;
     let mut memory: Vec<u8> = Vec::with_capacity(1000);
     let mut mmu = Mmu::new(buf);
-    let mut cpu = Cpu::new(0, [0;32], mmu);
+    let mut cpu = Cpu::new(0, [0;4096], [0;32], mmu);
     cpu.execute()?;
     Ok(())
 }

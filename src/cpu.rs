@@ -11,6 +11,7 @@ mod op {
     pub const STORE: u32 = 0b01000;
     pub const AIMM: u32 = 0b00100;
     pub const AREG: u32 = 0b01100;
+    pub const CSR: u32 = 0b11100;
 }
 
 //funct3 for branch
@@ -61,17 +62,27 @@ mod f3r {
     pub const AND: u32 = 0b111;
 }
 
+mod f3c {
+    pub const CSRRW: u32 = 0b001;
+    pub const CSRRS: u32 = 0b010;
+    pub const CSRRC: u32 = 0b011;
+    pub const CSRRWI: u32 = 0b101;
+    pub const CSRRSI: u32 = 0b110;
+    pub const CSRRCI: u32 = 0b111;
+}
+
 pub struct Cpu {
     pc: u64,
-    CSR: [u64; 4096],
+    csr: [u64; 4096],
     register: [u64; 32],
     mmu: Mmu,
 }
 
 impl Cpu {
-    pub fn new(pc: u64, register: [u64; 32], mmu: Mmu) -> Cpu {
+    pub fn new(pc: u64, csr: [u64; 4096], register: [u64; 32], mmu: Mmu) -> Cpu {
         Cpu {
             pc,
+            csr,
             register,
             mmu,
         }
@@ -79,7 +90,7 @@ impl Cpu {
     pub fn execute(&mut self) -> io::Result<()> {
         loop {
             let old_pc = self.pc;
-            let (inst,op_len) = self.fetch();
+            let (inst, op_len) = self.fetch();
             match self.exec(inst) {
                 Ok(()) => {}
                 Err(()) => {
@@ -137,50 +148,42 @@ impl Cpu {
             }
             op::JALR => {
                 self.register[rv32::get_rd(inst)] = self.pc + 4;
-                self.pc = (self.register[rv32::get_rs1(inst) as usize]
+                self.pc = (self.register[rv32::get_rs1(inst)]
                     + rv32::get_bits_extended(inst, 31, 20) as u64)
                     & 0xfffffffe;
             }
             op::BRANCH => match rv32::get_funct3(inst) {
                 f3b::BEQ => {
-                    if self.register[rv32::get_rs1(inst) as usize]
-                        == self.register[rv32::get_rs2(inst) as usize]
-                    {
+                    if self.register[rv32::get_rs1(inst)] == self.register[rv32::get_rs2(inst)] {
                         self.pc += rv32::sign_extend(rv32::get_imm_branch(inst), 12) as u64;
                     }
                 }
                 f3b::BNE => {
-                    if self.register[rv32::get_rs1(inst) as usize]
-                        != self.register[rv32::get_rs2(inst) as usize]
-                    {
+                    if self.register[rv32::get_rs1(inst)] != self.register[rv32::get_rs2(inst)] {
                         self.pc += rv32::sign_extend(rv32::get_imm_branch(inst), 12) as u64;
                     }
                 }
                 f3b::BLT => {
-                    if (self.register[rv32::get_rs1(inst) as usize] as i32)
-                        < (self.register[rv32::get_rs2(inst) as usize] as i32)
+                    if (self.register[rv32::get_rs1(inst)] as i32)
+                        < (self.register[rv32::get_rs2(inst)] as i32)
                     {
                         self.pc += rv32::sign_extend(rv32::get_imm_branch(inst), 12) as u64;
                     }
                 }
                 f3b::BGE => {
-                    if (self.register[rv32::get_rs1(inst) as usize] as i32)
-                        >= (self.register[rv32::get_rs2(inst) as usize] as i32)
+                    if (self.register[rv32::get_rs1(inst)] as i32)
+                        >= (self.register[rv32::get_rs2(inst)] as i32)
                     {
                         self.pc += rv32::sign_extend(rv32::get_imm_branch(inst), 12) as u64;
                     }
                 }
                 f3b::BLTU => {
-                    if self.register[rv32::get_rs1(inst) as usize]
-                        < self.register[rv32::get_rs2(inst) as usize]
-                    {
+                    if self.register[rv32::get_rs1(inst)] < self.register[rv32::get_rs2(inst)] {
                         self.pc += rv32::sign_extend(rv32::get_imm_branch(inst), 12) as u64;
                     }
                 }
                 f3b::BGEU => {
-                    if self.register[rv32::get_rs1(inst) as usize]
-                        >= self.register[rv32::get_rs2(inst) as usize]
-                    {
+                    if self.register[rv32::get_rs1(inst)] >= self.register[rv32::get_rs2(inst)] {
                         self.pc += rv32::sign_extend(rv32::get_imm_branch(inst), 12) as u64;
                     }
                 }
@@ -192,35 +195,35 @@ impl Cpu {
             op::LD => match rv32::get_funct3(inst) {
                 f3l::LB => {
                     let offset = rv32::get_bits_extended(inst, 31, 20);
-                    let address = (self.register[rv32::get_rs1(inst) as usize] as u32) + offset;
+                    let address = (self.register[rv32::get_rs1(inst)] as u32) + offset;
                     let data = rv32::sign_extend(self.mmu.read_nbytes(address as u64, 1) as u32, 7);
-                    self.register[rv32::get_rs1(inst) as usize] = data as u64;
+                    self.register[rv32::get_rs1(inst)] = data as u64;
                 }
                 f3l::LH => {
                     let offset = rv32::get_bits_extended(inst, 31, 20);
-                    let address = (self.register[rv32::get_rs1(inst) as usize] as u32) + offset;
+                    let address = (self.register[rv32::get_rs1(inst)] as u32) + offset;
                     let data =
                         rv32::sign_extend(self.mmu.read_nbytes(address as u64, 2) as u32, 15);
-                    self.register[rv32::get_rs1(inst) as usize] = data as u64;
+                    self.register[rv32::get_rs1(inst)] = data as u64;
                 }
                 f3l::LW => {
                     let offset = rv32::get_bits_extended(inst, 31, 20);
-                    let address = (self.register[rv32::get_rs1(inst) as usize] as u32) + offset;
+                    let address = (self.register[rv32::get_rs1(inst)] as u32) + offset;
                     let data =
                         rv32::sign_extend(self.mmu.read_nbytes(address as u64, 2) as u32, 31);
-                    self.register[rv32::get_rs1(inst) as usize] = data as u64;
+                    self.register[rv32::get_rs1(inst)] = data as u64;
                 }
                 f3l::LBU => {
                     let offset = rv32::get_bits_extended(inst, 31, 20);
-                    let address = (self.register[rv32::get_rs1(inst) as usize] as u32) + offset;
+                    let address = (self.register[rv32::get_rs1(inst)] as u32) + offset;
                     let data = self.mmu.read_nbytes(address as u64, 1) as u32;
-                    self.register[rv32::get_rs1(inst) as usize] = data as u64;
+                    self.register[rv32::get_rs1(inst)] = data as u64;
                 }
                 f3l::LHU => {
                     let offset = rv32::get_bits_extended(inst, 31, 20);
-                    let address = (self.register[rv32::get_rs1(inst) as usize] as u32) + offset;
+                    let address = (self.register[rv32::get_rs1(inst)] as u32) + offset;
                     let data = self.mmu.read_nbytes(address as u64, 2) as u32;
-                    self.register[rv32::get_rs1(inst) as usize] = data as u64;
+                    self.register[rv32::get_rs1(inst)] = data as u64;
                 }
                 _ => {
                     println!("not found");
@@ -230,23 +233,23 @@ impl Cpu {
             op::STORE => match rv32::get_funct3(inst) {
                 f3s::SB => {
                     self.mmu.write_byte(
-                        self.register[rv32::get_rs1(inst) as usize]
+                        self.register[rv32::get_rs1(inst)]
                             + rv32::sign_extend(rv32::get_imm_st(inst), 11) as u64,
-                        self.register[rv32::get_rs2(inst) as usize] as u8,
+                        self.register[rv32::get_rs2(inst)] as u8,
                     );
                 }
                 f3s::SH => {
                     self.mmu.write_2byte(
-                        self.register[rv32::get_rs1(inst) as usize]
+                        self.register[rv32::get_rs1(inst)]
                             + rv32::sign_extend(rv32::get_imm_st(inst), 11) as u64,
-                        self.register[rv32::get_rs2(inst) as usize] as u16,
+                        self.register[rv32::get_rs2(inst)] as u16,
                     );
                 }
                 f3s::SW => {
                     self.mmu.write_4byte(
-                        self.register[rv32::get_rs1(inst) as usize]
+                        self.register[rv32::get_rs1(inst)]
                             + rv32::sign_extend(rv32::get_imm_st(inst), 11) as u64,
-                        self.register[rv32::get_rs2(inst) as usize] as u32,
+                        self.register[rv32::get_rs2(inst)] as u32,
                     );
                 }
                 _ => {
@@ -256,13 +259,18 @@ impl Cpu {
             op::AIMM => match rv32::get_funct3(inst) {
                 f3i::ADDI => {
                     // TODO: 32bitと64bit
-                    self.register[rv32::get_rd(inst)] = self.register[rv32::get_rs1(inst) as usize]
+                    println!(
+                        "ADDI x{}, x{}, 0x{:x}",
+                        rv32::get_rd(inst),
+                        rv32::get_rs1(inst),
+                        rv32::get_bits_extended(inst, 31, 20)
+                    );
+                    self.register[rv32::get_rd(inst)] = self.register[rv32::get_rs1(inst)]
                         + rv32::get_bits_extended(inst, 31, 20) as u64;
                 }
                 f3i::SLTI => {
                     // TODO: 32bitと64bit
-                    self.register[rv32::get_rd(inst)] = if self.register
-                        [rv32::get_rs1(inst) as usize]
+                    self.register[rv32::get_rd(inst)] = if self.register[rv32::get_rs1(inst)]
                         < rv32::get_bits_extended(inst, 31, 20) as u64
                     {
                         1
@@ -271,8 +279,7 @@ impl Cpu {
                     };
                 }
                 f3i::SLTIU => {
-                    self.register[rv32::get_rd(inst)] = if self.register
-                        [rv32::get_rs1(inst) as usize]
+                    self.register[rv32::get_rd(inst)] = if self.register[rv32::get_rs1(inst)]
                         < rv32::get_bits(inst, 31, 20) as u64
                     {
                         1
@@ -282,17 +289,17 @@ impl Cpu {
                 }
                 f3i::XORI => {
                     self.register[rv32::get_rd(inst)] =
-                        ((self.register[rv32::get_rs1(inst) as usize] as u32)
+                        ((self.register[rv32::get_rs1(inst)] as u32)
                             ^ (rv32::get_bits(inst, 31, 20))) as u64;
                 }
                 f3i::ORI => {
                     self.register[rv32::get_rd(inst)] =
-                        ((self.register[rv32::get_rs1(inst) as usize] as u32)
+                        ((self.register[rv32::get_rs1(inst)] as u32)
                             | (rv32::get_bits(inst, 31, 20))) as u64;
                 }
                 f3i::ANDI => {
                     self.register[rv32::get_rd(inst)] =
-                        ((self.register[rv32::get_rs1(inst) as usize] as u32)
+                        ((self.register[rv32::get_rs1(inst)] as u32)
                             & (rv32::get_bits(inst, 31, 20))) as u64;
                 }
                 _ => {
@@ -307,8 +314,49 @@ impl Cpu {
                     return Err(());
                 }
             },
+            op::CSR => match rv32::get_funct3(inst) {
+                f3c::CSRRW => {
+                    let csr = rv32::get_bits(inst, 31, 20) as usize;
+                    let t = self.csr[csr];
+                    self.csr[csr] = self.register[rv32::get_rs1(inst)];
+                    self.register[rv32::get_rd(inst)] = t;
+                }
+                f3c::CSRRS => {
+                    let csr = rv32::get_bits(inst, 31, 20) as usize;
+                    let t = self.csr[csr];
+                    self.csr[csr] = t | self.register[rv32::get_rs1(inst)];
+                    self.register[rv32::get_rd(inst)] = t;
+                }
+                f3c::CSRRC => {
+                    let csr = rv32::get_bits(inst, 31, 20) as usize;
+                    let t = self.csr[csr];
+                    self.csr[csr] = t & (!self.register[rv32::get_rs1(inst)]);
+                    self.register[rv32::get_rd(inst)] = t;
+                }
+                f3c::CSRRWI => {
+                    let csr = rv32::get_bits(inst, 31, 20) as usize;
+                    self.register[rv32::get_rd(inst)] = self.csr[csr];
+                    self.csr[csr] = rv32::get_bits(inst, 19,15) as u64;
+                }
+                f3c::CSRRSI => {
+                    let csr = rv32::get_bits(inst, 31, 20) as usize;
+                    let t = self.csr[csr];
+                    self.csr[csr] = t | (rv32::get_bits(inst, 19, 15) as u64);
+                    self.register[rv32::get_rd(inst)] = t;
+                }
+                f3c::CSRRCI => {
+                    let csr = rv32::get_bits(inst, 31, 20) as usize;
+                    let t = self.csr[csr];
+                    self.csr[csr] = t & (!(rv32::get_bits(inst, 19, 15) as u64));
+                    self.register[rv32::get_rd(inst)] = t;
+                }
+                _ => {
+                    println!("not found");
+                    return Err(());
+                }
+            },
             _ => {
-                println!("not found");
+                println!("not found op");
                 return Err(());
             }
         }
@@ -352,11 +400,11 @@ mod rv32 {
     pub fn get_rd(inst: u32) -> usize {
         get_bits(inst, 11, 7) as usize
     }
-    pub fn get_rs1(inst: u32) -> u32 {
-        get_bits(inst, 19, 15)
+    pub fn get_rs1(inst: u32) -> usize {
+        get_bits(inst, 19, 15) as usize
     }
-    pub fn get_rs2(inst: u32) -> u32 {
-        get_bits(inst, 24, 20)
+    pub fn get_rs2(inst: u32) -> usize {
+        get_bits(inst, 24, 20) as usize
     }
     pub fn get_imm_jal(inst: u32) -> u32 {
         let imm = (get_bits(inst, 31, 31) << 20)
