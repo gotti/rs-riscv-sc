@@ -21,11 +21,3 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
-  riscv-tests:
-    runs-on: ubuntu-latest
-    container: kamiyaowl/riscv-gnu-toolchain-docker
-
-    steps:
-    - uses: actions/checkout@v2
-    - name: make riscv-tests
-      run: git clone https://github.com/riscv/riscv-tests

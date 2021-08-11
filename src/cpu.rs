@@ -1,5 +1,5 @@
-use crate::mmu::Mmu;
-use std::io;
+use crate::{cpu::rv32::get_bits, mmu::Mmu};
+use std::{io, str::FromStr};
 
 mod op {
     pub const LUDI: u32 = 0b01101;
@@ -48,6 +48,8 @@ mod f3i {
     pub const XORI: u32 = 0b100;
     pub const ORI: u32 = 0b110;
     pub const ANDI: u32 = 0b111;
+    pub const SLLI: u32 = 0b001;
+    pub const SRLI_SRAI: u32 = 0b101;
 }
 
 //funct3 for arithmatic register
@@ -93,8 +95,8 @@ impl Cpu {
             let (inst, op_len) = self.fetch();
             match self.exec(inst) {
                 Ok(()) => {}
-                Err(()) => {
-                    println!("Error");
+                Err(e) => {
+                    println!("{}",e);
                 }
             }
             if old_pc == self.pc {
@@ -111,22 +113,19 @@ impl Cpu {
         println!("pc  : {:#x}", self.pc);
         (inst, op_length)
     }
-    fn exec(&mut self, inst: u64) -> Result<(), ()> {
+    fn exec(&mut self, inst: u64) -> Result<(), String> {
         let op_length = parse_inst_length(inst);
         match op_length {
             2 => {
                 //TODO: implement compressed op
-                Err(())
+                Err(String::from("Not implemented compressed op"))
             }
-            4 => match self.exec_rv32(inst as u32) {
-                Ok(()) => Ok(()),
-                Err(()) => Err(()),
-            },
+            4 => self.exec_rv32(inst as u32),
             8 => Ok(()),
-            _ => Err(()),
+            _ => Err(String::from("Invalid xlen")),
         }
     }
-    fn exec_rv32(&mut self, inst: u32) -> Result<(), ()> {
+    fn exec_rv32(&mut self, inst: u32) -> Result<(), String> {
         println!("{:x}", rv32::get_op(inst));
         match rv32::get_op(inst) {
             op::LUDI => {
@@ -188,8 +187,7 @@ impl Cpu {
                     }
                 }
                 _ => {
-                    println!("not found");
-                    return Err(());
+                    return Err(String::from("No inst on branch"));
                 }
             },
             op::LD => match rv32::get_funct3(inst) {
@@ -226,8 +224,7 @@ impl Cpu {
                     self.register[rv32::get_rs1(inst)] = data as u64;
                 }
                 _ => {
-                    println!("not found");
-                    return Err(());
+                    return Err(String::from("No inst on load"));
                 }
             },
             op::STORE => match rv32::get_funct3(inst) {
@@ -253,7 +250,7 @@ impl Cpu {
                     );
                 }
                 _ => {
-                    return Err(());
+                    return Err(String::from("No inst on store"));
                 }
             },
             op::AIMM => match rv32::get_funct3(inst) {
@@ -302,16 +299,39 @@ impl Cpu {
                         ((self.register[rv32::get_rs1(inst)] as u32)
                             & (rv32::get_bits(inst, 31, 20))) as u64;
                 }
+                f3i::SLLI => {
+                    self.register[rv32::get_rd(inst)] =
+                        self.register[rv32::get_rs1(inst)] << rv32::get_bits(inst, 24, 20);
+                }
+                f3i::SRLI_SRAI => match rv32::get_bits(inst, 30, 30) {
+                    0 => {
+                        self.register[rv32::get_rd(inst)] =
+                            self.register[rv32::get_rs1(inst)] >> get_bits(inst, 25, 20);
+                    }
+                    1 => {
+                        self.register[rv32::get_rd(inst)] = if rv32::get_bits(inst, 31, 31) == 1 {
+                            self.register[rv32::get_rs1(inst)] >> get_bits(inst, 25, 20)
+                        } else {
+                            rv32::get_bits_extended(
+                                (self.register[rv32::get_rs1(inst)] >> get_bits(inst, 25, 20))
+                                    as u32,
+                                31 - get_bits(inst, 25, 20) as usize,
+                                0,
+                            ) as u64
+                        };
+                    }
+                    _ => {
+                        return Err(String::from("No inst on SRLI_SRAI"));
+                    }
+                },
                 _ => {
-                    println!("not found");
-                    return Err(());
+                    return Err(String::from("No inst on arithmatic immediate"));
                 }
             },
             op::AREG => match rv32::get_funct3(inst) {
                 f3r::ADD_SUB => {}
                 _ => {
-                    println!("not found");
-                    return Err(());
+                    return Err(String::from("No inst on arithmatic register"));
                 }
             },
             op::CSR => match rv32::get_funct3(inst) {
@@ -336,7 +356,7 @@ impl Cpu {
                 f3c::CSRRWI => {
                     let csr = rv32::get_bits(inst, 31, 20) as usize;
                     self.register[rv32::get_rd(inst)] = self.csr[csr];
-                    self.csr[csr] = rv32::get_bits(inst, 19,15) as u64;
+                    self.csr[csr] = rv32::get_bits(inst, 19, 15) as u64;
                 }
                 f3c::CSRRSI => {
                     let csr = rv32::get_bits(inst, 31, 20) as usize;
@@ -351,13 +371,11 @@ impl Cpu {
                     self.register[rv32::get_rd(inst)] = t;
                 }
                 _ => {
-                    println!("not found");
-                    return Err(());
+                    return Err(String::from("No inst on CSR"));
                 }
             },
             _ => {
-                println!("not found op");
-                return Err(());
+                return Err(String::from("No instruction"));
             }
         }
         return Ok(());
