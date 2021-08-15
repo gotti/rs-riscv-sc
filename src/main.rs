@@ -5,9 +5,11 @@ use std::process::exit;
 
 use crate::cpu::Cpu;
 use crate::mmu::Mmu;
+use crate::csr::Csr;
 
 mod cpu;
 mod mmu;
+mod csr;
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -22,7 +24,8 @@ fn main() -> io::Result<()> {
     f.read_to_end(&mut buf)?;
     let mut memory: Vec<u8> = Vec::with_capacity(1000);
     let mut mmu = Mmu::new(buf);
-    let mut cpu = Cpu::new(0, [0;4096], [0;32], mmu);
+    let mut csr = Csr::new([0;4096]);
+    let mut cpu = Cpu::new(0, csr, [0;32], 0, mmu);
     cpu.execute()?;
     Ok(())
 }

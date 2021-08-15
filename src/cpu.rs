@@ -1,4 +1,4 @@
-use crate::{cpu::rv32::get_bits, mmu::Mmu};
+use crate::{cpu::rv32::get_bits, csr::Csr, mmu::Mmu};
 use std::{io, str::FromStr};
 
 mod op {
@@ -65,6 +65,7 @@ mod f3r {
 }
 
 mod f3c {
+    pub const EXCEPT: u32 = 0b000;
     pub const CSRRW: u32 = 0b001;
     pub const CSRRS: u32 = 0b010;
     pub const CSRRC: u32 = 0b011;
@@ -73,19 +74,32 @@ mod f3c {
     pub const CSRRCI: u32 = 0b111;
 }
 
+mod privilege {
+    pub const user: u8 = 0b00;
+    pub const supervisor: u8 = 0b01;
+    pub const hypervisor: u8 = 0b10;
+    pub const machine: u8 = 0b11;
+}
+
+mod exception {
+    pub const ecall: u32 = 0;
+}
+
 pub struct Cpu {
     pc: u64,
-    csr: [u64; 4096],
+    csr: Csr,
     register: [u64; 32],
+    privilege: u8,
     mmu: Mmu,
 }
 
 impl Cpu {
-    pub fn new(pc: u64, csr: [u64; 4096], register: [u64; 32], mmu: Mmu) -> Cpu {
+    pub fn new(pc: u64, csr: Csr, register: [u64; 32], privilege: u8, mmu: Mmu) -> Cpu {
         Cpu {
             pc,
             csr,
             register,
+            privilege,
             mmu,
         }
     }
@@ -96,7 +110,7 @@ impl Cpu {
             match self.exec(inst) {
                 Ok(()) => {}
                 Err(e) => {
-                    println!("{}",e);
+                    println!("{}", e);
                 }
             }
             if old_pc == self.pc {
@@ -335,39 +349,54 @@ impl Cpu {
                 }
             },
             op::CSR => match rv32::get_funct3(inst) {
+                f3c::EXCEPT => {
+                    let exception = rv32::get_bits(inst, 31, 20);
+                    match exception {
+                        exception::ecall => {
+                            let current_pc = self.pc;
+                        }
+                        _ => {
+                            return Err(String::from("No inst on CSR EXCEPTION"));
+                        }
+                    }
+                }
                 f3c::CSRRW => {
                     let csr = rv32::get_bits(inst, 31, 20) as usize;
-                    let t = self.csr[csr];
-                    self.csr[csr] = self.register[rv32::get_rs1(inst)];
+                    let t = self.csr.read(csr)?;
+                    self.csr.write(csr, self.register[rv32::get_rs1(inst)])?;
                     self.register[rv32::get_rd(inst)] = t;
                 }
                 f3c::CSRRS => {
                     let csr = rv32::get_bits(inst, 31, 20) as usize;
-                    let t = self.csr[csr];
-                    self.csr[csr] = t | self.register[rv32::get_rs1(inst)];
+                    let t = self.csr.read(csr)?;
+                    self.csr
+                        .write(csr, t | self.register[rv32::get_rs1(inst)])?;
                     self.register[rv32::get_rd(inst)] = t;
                 }
                 f3c::CSRRC => {
                     let csr = rv32::get_bits(inst, 31, 20) as usize;
-                    let t = self.csr[csr];
-                    self.csr[csr] = t & (!self.register[rv32::get_rs1(inst)]);
+                    let t = self.csr.read(csr)?;
+                    self.csr
+                        .write(csr, t & !self.register[rv32::get_rs1(inst)])?;
                     self.register[rv32::get_rd(inst)] = t;
                 }
                 f3c::CSRRWI => {
                     let csr = rv32::get_bits(inst, 31, 20) as usize;
-                    self.register[rv32::get_rd(inst)] = self.csr[csr];
-                    self.csr[csr] = rv32::get_bits(inst, 19, 15) as u64;
+                    self.register[rv32::get_rd(inst)] = self.csr.read(csr)?;
+                    self.csr.write(csr, rv32::get_bits(inst, 19, 15) as u64)?;
                 }
                 f3c::CSRRSI => {
                     let csr = rv32::get_bits(inst, 31, 20) as usize;
-                    let t = self.csr[csr];
-                    self.csr[csr] = t | (rv32::get_bits(inst, 19, 15) as u64);
+                    let t = self.csr.read(csr)?;
+                    self.csr
+                        .write(csr, t | rv32::get_bits(inst, 19, 15) as u64)?;
                     self.register[rv32::get_rd(inst)] = t;
                 }
                 f3c::CSRRCI => {
                     let csr = rv32::get_bits(inst, 31, 20) as usize;
-                    let t = self.csr[csr];
-                    self.csr[csr] = t & (!(rv32::get_bits(inst, 19, 15) as u64));
+                    let t = self.csr.read(csr)?;
+                    self.csr
+                        .write(csr, t & (!rv32::get_bits(inst, 19, 15)) as u64)?;
                     self.register[rv32::get_rd(inst)] = t;
                 }
                 _ => {
