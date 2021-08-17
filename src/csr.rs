@@ -13,14 +13,14 @@ impl Csr {
             self.register[address] = data;
             Ok(())
         } else {
-            Err(String::from("referring to out-of-range address"))
+            Err(String::from("referring to out-of-range csr reg"))
         }
     }
     pub fn read(&mut self, address: usize) -> Result<u64, String> {
         if address < 4096 {
             return Ok(self.register[address]);
         } else {
-            Err(String::from("referring to out-of-range address"))
+            Err(String::from("referring to out-of-range csr reg"))
         }
     }
 }

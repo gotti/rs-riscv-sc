@@ -6,8 +6,10 @@ use std::process::exit;
 use crate::cpu::Cpu;
 use crate::mmu::Mmu;
 use crate::csr::Csr;
+use crate::register::Register;
 
 mod cpu;
+mod register;
 mod mmu;
 mod csr;
 
@@ -25,7 +27,8 @@ fn main() -> io::Result<()> {
     let mut memory: Vec<u8> = Vec::with_capacity(1000);
     let mut mmu = Mmu::new(buf);
     let mut csr = Csr::new([0;4096]);
-    let mut cpu = Cpu::new(0, csr, [0;32], 0, mmu);
+    let mut reg = Register::new([0;32]);
+    let mut cpu = Cpu::new(0, csr, reg, 0b11, mmu);
     cpu.execute()?;
     Ok(())
 }
