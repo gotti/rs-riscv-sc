@@ -1,33 +1,34 @@
-use std::{env, io};
-use std::io::Read;
+use clap::{App, Arg};
 use std::fs::File;
+use std::io::Read;
 use std::process::exit;
+use std::{env, io};
 
 use crate::cpu::Cpu;
-use crate::mmu::Mmu;
 use crate::csr::Csr;
+use crate::mmu::Mmu;
 use crate::register::Register;
 
 mod cpu;
-mod register;
-mod mmu;
 mod csr;
+mod mmu;
+mod register;
 
 fn main() -> io::Result<()> {
-    let args: Vec<String> = env::args().collect();
-    let l = args.len();
-    if l <= 1 {
-        println!("Lack of argument, binary name");
-        exit(1);
-    }
-    let f = &args[1];
+    let matches = App::new("rs-riscv-sc, a risc-v emulator written in rust.")
+        .version("0.0")
+        .arg(Arg::with_name("INPUT_FILE").help("Path to raw riscv binary starting 0, not elf."))
+        .arg(Arg::with_name("test-mode").short("t").long("test-mode").help("Run riscv-tests"))
+        .get_matches();
+    let f = matches.value_of("INPUT_FILE").unwrap();
+    let test_mode = matches.is_present("test-mode");
     let mut f = File::open(f)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
     let mut memory: Vec<u8> = Vec::with_capacity(1000);
-    let mut mmu = Mmu::new(buf);
-    let mut csr = Csr::new([0;4096]);
-    let mut reg = Register::new([0;32]);
+    let mut mmu = Mmu::new(buf, test_mode);
+    let mut csr = Csr::new([0; 4096]);
+    let mut reg = Register::new([0; 32]);
     let mut cpu = Cpu::new(0, csr, reg, 0b11, mmu);
     cpu.execute()?;
     Ok(())

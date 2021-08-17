@@ -125,7 +125,6 @@ impl Cpu {
                 Ok(()) => {}
                 Err(e) => {
                     println!("{}", e);
-                    break;
                 }
             }
             for i in 0..32 {
@@ -323,23 +322,10 @@ impl Cpu {
                     );
                 }
                 f3s::SW => {
-                    println!("mcause={0}", self.csr.read(0x342)?);
-                    println!(
-                        "rs1={0}",
-                        self.register.read(rv32::get_rs1(inst), self.len)?
-                    );
-                    println!("imm={0}", rv32::sign_extend(rv32::get_imm_st(inst), 11));
-                    println!(
-                        "addr={0}",
-                        (self.register.read(rv32::get_rs1(inst), self.len)?
-                            + rv32::sign_extend(rv32::get_imm_st(inst), 11) as u64)
-                            as u32 as u64,
-                    );
-                    println!("data={0}",self.register.read(rv32::get_rs2(inst),self.len)? as u32);
                     self.mmu.write_4byte(
                         (self.register.read(rv32::get_rs1(inst), self.len)?
                             + rv32::sign_extend(rv32::get_imm_st(inst), 11) as u64)
-                            as u64,
+                            as u32 as u64,
                         self.register.read(rv32::get_rs2(inst), self.len)? as u32,
                     );
                 }
