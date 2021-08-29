@@ -1,4 +1,6 @@
-use crate::{cpu::rv32::get_bits, csr::Csr, mmu::Mmu, register::Register};
+use crate::{
+    cpu::rv32::get_bits, csr::Csr, mmu::Mmu, register::Register, shadowstack::ShadowStack,
+};
 use std::{io, str::FromStr};
 
 mod op {
@@ -149,10 +151,18 @@ pub struct Cpu {
     register: Register,
     privilege: u8,
     mmu: Mmu,
+    sstack: ShadowStack,
 }
 
 impl Cpu {
-    pub fn new(pc: u64, csr: Csr, register: Register, privilege: u8, mmu: Mmu) -> Cpu {
+    pub fn new(
+        pc: u64,
+        csr: Csr,
+        register: Register,
+        privilege: u8,
+        mmu: Mmu,
+        sstack: ShadowStack,
+    ) -> Cpu {
         Cpu {
             pc,
             len: 4,
@@ -160,6 +170,7 @@ impl Cpu {
             register,
             privilege,
             mmu,
+            sstack,
         }
     }
     pub fn execute(&mut self) -> io::Result<()> {
@@ -249,6 +260,10 @@ impl Cpu {
                 self.register
                     .write(rv32::get_rd(inst), self.pc + 4, self.len)?;
                 self.pc += rv32::get_imm_jal(inst) as u64;
+                if rv32::get_rd(inst) == 1 {
+                    //this is subroutine call
+                    self.sstack.push(self.pc);
+                }
                 println!(
                     "JAL x{:x}, 0x{:x}",
                     rv32::get_rd(inst),
@@ -258,9 +273,22 @@ impl Cpu {
             op::JALR => {
                 self.register
                     .write(rv32::get_rd(inst), self.pc + 4, self.len)?;
-                self.pc = (self.register.read(rv32::get_rs1(inst), self.len)?
+                let target = (self.register.read(rv32::get_rs1(inst), self.len)?
                     + rv32::get_bits_extended(inst, 31, 20) as u64)
                     & !1;
+                if rv32::get_rd(inst) == 0
+                    && rv32::get_rs1(inst) == 1
+                    && rv32::get_bits(inst, 31, 20) == 0
+                {
+                    //ret
+                    if target == self.sstack.pop()? {
+                        self.pc = (self.register.read(rv32::get_rs1(inst), self.len)?
+                            + rv32::get_bits_extended(inst, 31, 20) as u64)
+                            & !1;
+                    } else {
+                        return Err(String::from("@@@ shadow stack mismatch @@@"));
+                    }
+                }
             }
             op::BRANCH => match rv32::get_funct3(inst) {
                 f3b::BEQ => {
