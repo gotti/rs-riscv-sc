@@ -16,5 +16,4 @@ done
 
 echo "test passed: $success"
 echo "test failed: $(($all-$success))"
-echo "$success/$all"
 echo "pass rate  : $(bc <<< "scale=1; 100*$success/$all")%"

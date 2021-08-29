@@ -87,6 +87,61 @@ mod exception {
     pub const mret: u32 = 0b001100000010;
 }
 
+pub trait R2R {
+    fn exec_register(&self, state: State, reg: &Register) -> Result<Register, String>;
+}
+
+struct RegisterInst {
+    exec: fn(&Self, State, &Register) -> Result<Register, String>,
+}
+impl R2R for RegisterInst {
+    fn exec_register(&self, state: State, reg: &Register) -> Result<Register, String> {
+        (self.exec)(&self, state, reg)
+    }
+}
+const add: RegisterInst = RegisterInst {
+    exec: |sel, state, reg| {
+        let mut r = reg.clone();
+        if rv32::get_bits(state.imm as u32, 10, 10) != 1 {
+            r.write(
+                state.rd,
+                reg.read(state.rs1, 4)? + reg.read(state.rs2, 4)?,
+                4,
+            )?;
+        } else {
+            r.write(
+                state.rd,
+                reg.read(state.rs1, 4)? - reg.read(state.rs2, 4)?,
+                4,
+            )?;
+        }
+        Ok(r)
+    },
+};
+pub struct State {
+    rd: usize,
+    rs1: usize,
+    rs2: usize,
+    imm: u64,
+}
+impl State {
+    pub fn new(rd: usize, rs1: usize, rs2: usize, imm: u64) -> Self {
+        Self { rd, rs1, rs2, imm }
+    }
+    pub fn read_rd(&self) -> usize {
+        self.rd
+    }
+    pub fn read_rs1(&self) -> usize {
+        self.rs1
+    }
+    pub fn read_rs2(&self) -> usize {
+        self.rs2
+    }
+    pub fn read_rs3(&self) -> u64 {
+        self.imm
+    }
+}
+
 pub struct Cpu {
     pc: u64,
     len: u8,
@@ -125,6 +180,7 @@ impl Cpu {
                 Ok(()) => {}
                 Err(e) => {
                     println!("{}", e);
+                    break;
                 }
             }
             for i in 0..32 {
@@ -446,12 +502,25 @@ impl Cpu {
             },
             op::AREG => match rv32::get_funct3(inst) {
                 f3r::ADD_SUB => {
+                    println!("ADD_SUB");
+                    let state = State {
+                        rd: rv32::get_rd(inst),
+                        rs1: rv32::get_rs1(inst),
+                        rs2: rv32::get_rs2(inst),
+                        imm: rv32::get_bits(inst, 31, 25) as u64,
+                    };
+                    let areg = add.exec_register(state, &self.register)?;
+                    for i in 0..32 {
+                        self.register.write(i, areg.read(i, 4)?, 4)?;
+                    }
+                    /*
                     self.register.write(
                         rv32::get_rd(inst),
                         self.register.read(rv32::get_rs1(inst), self.len)?
                             + self.register.read(rv32::get_rs2(inst), self.len)?,
                         self.len,
                     )?;
+                    */
                 }
                 _ => {
                     return Err(String::from("No inst on arithmatic register"));

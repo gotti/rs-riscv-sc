@@ -1,18 +1,19 @@
 use clap::{App, Arg};
 use std::fs::File;
 use std::io::Read;
-use std::process::exit;
 use std::{env, io};
 
 use crate::cpu::Cpu;
 use crate::csr::Csr;
 use crate::mmu::Mmu;
 use crate::register::Register;
+mod crate::shadowstack::ShadowStack;
 
 mod cpu;
 mod csr;
 mod mmu;
 mod register;
+mod shadowstack;
 
 fn main() -> io::Result<()> {
     let matches = App::new("rs-riscv-sc, a risc-v emulator written in rust.")

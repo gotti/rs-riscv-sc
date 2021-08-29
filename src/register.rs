@@ -1,3 +1,4 @@
+#[derive(Clone, Copy)]
 pub struct Register {
     registers: [u64; 32],
 }
@@ -19,7 +20,7 @@ impl Register {
             4 => return Ok(self.registers[n] as u32 as u64),
             8 => return Ok(self.registers[n] as u64 as u64),
             _ => {
-                return Err(String::from("No such length"));
+                return Err(String::from("No such register length"));
             }
         }
     }
@@ -33,7 +34,7 @@ impl Register {
             3 => self.registers[n] = d as u32 as u64,
             4 => self.registers[n] = d as u64 as u64,
             _ => {
-                return Err(String::from("No such length"));
+                return Err(String::from("No such register length"));
             }
         }
         return Ok(());
