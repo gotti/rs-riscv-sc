@@ -31,7 +31,7 @@ fn main() -> io::Result<()> {
     let mut csr = Csr::new([0; 4096]);
     let mut reg = Register::new([0; 32]);
     let mut sstack = ShadowStack::new(0,[0;255]);
-    let mut cpu = Cpu::new(0, csr, reg, 0b11, mmu);
+    let mut cpu = Cpu::new(0, csr, reg, 0b11, mmu,sstack);
     cpu.execute()?;
     Ok(())
 }
