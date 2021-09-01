@@ -14,6 +14,7 @@ mod csr;
 mod mmu;
 mod register;
 mod shadowstack;
+mod bitutils;
 
 fn main() -> io::Result<()> {
     let matches = App::new("rs-riscv-sc, a risc-v emulator written in rust.")

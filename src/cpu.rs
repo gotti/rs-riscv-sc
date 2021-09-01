@@ -1,5 +1,11 @@
 use crate::{
-    cpu::rv32::get_bits, csr::Csr, mmu::Mmu, register::Register, shadowstack::ShadowStack,
+    bitcat,
+    bitutils::{self, Bits},
+    cpu::rv32::get_bits,
+    csr::Csr,
+    mmu::Mmu,
+    register::Register,
+    shadowstack::ShadowStack,
 };
 use std::{io, str::FromStr};
 
@@ -87,6 +93,17 @@ mod privilege {
 mod exception {
     pub const ecall: u32 = 0;
     pub const mret: u32 = 0b001100000010;
+}
+
+mod f3co_2 {
+    pub const slli: u32 = 0b000;
+    pub const jal: u32 = 0b001;
+    pub const lwsp: u32 = 0b010;
+    pub const mv: u32 = 0b100;
+    pub const ldsp: u32 = 0b011;
+    pub const ja: u32 = 0b100;
+    pub const swsp: u32 = 0b110;
+    pub const sdsp: u32 = 0b111;
 }
 
 pub trait R2R {
@@ -236,9 +253,101 @@ impl Cpu {
                 Err(String::from("Not implemented compressed op"))
             }
             4 => self.exec_rv32(inst as u32),
-            8 => Ok(()),
+            8 => Err(String::from("Not implemented rv64")),
             _ => Err(String::from("Invalid xlen")),
         }
+    }
+    fn uncompress(inst: u32) -> Result<u32, String> {
+        match rv32::get_bits(inst, 1, 0) {
+            0 => {}
+            1 => {}
+            2 => match rv32::get_bits(inst, 15, 13) {
+                f3co_2::slli => {
+                    let rd = bitutils::Bits::cut_new(inst, 11, 7);
+                    let shamt = bitutils::Bits::cut_new(inst, 12, 12)
+                        .shiftadd(bitutils::Bits::cut_new(inst, 6, 2));
+                    let bits = bitcat!(
+                        shamt,
+                        rd,
+                        Bits::new(0b001, 3),
+                        rd,
+                        Bits::new(op::AIMM as u64, 5),
+                        Bits::new(0b11, 2)
+                    );
+                    return Ok(bits.to_u32());
+                }
+                f3co_2::jal => {
+                    let imm = Bits::new(
+                        bitcat!(
+                            Bits::cut_new(inst, 12, 12),
+                            Bits::cut_new(inst, 8, 8),
+                            Bits::cut_new(inst, 10, 9),
+                            Bits::cut_new(inst, 6, 6),
+                            Bits::cut_new(inst, 7, 7),
+                            Bits::cut_new(inst, 2, 2),
+                            Bits::cut_new(inst, 11, 11),
+                            Bits::cut_new(inst, 5, 3)
+                        )
+                        .extend() as u64,
+                        32,
+                    );
+                    let ret = bitcat!(
+                        imm.cut(20, 20),
+                        imm.cut(10, 1),
+                        imm.cut(11,11),
+                        imm.cut(19, 12),
+                        Bits::new(1, 5),
+                        Bits::new(op::JAL as u64, 5),
+                        Bits::new(0b11, 2)
+                    );
+                    return Ok(ret.to_u32())
+                }
+                f3co_2::lwsp => {
+                    let rd = bitutils::Bits::cut_new(inst, 11, 7);
+                    let imm = bitcat!(
+                        Bits::cut_new(inst, 3, 2),
+                        Bits::cut_new(inst, 12, 12),
+                        Bits::cut_new(inst, 6, 5),
+                        Bits::new(0, 2)
+                    );
+                    let ret = bitcat!(
+                        imm,
+                        Bits::new(2, 5),
+                        Bits::new(2, 3),
+                        rd,
+                        Bits::new(op::LD as u64, 5),
+                        Bits::new(0b11, 2)
+                    );
+                    return Ok(ret.to_u32());
+                }
+                f3co_2::mv => match rv32::get_bits(inst, 12, 12) {
+                    0 => {
+                        let rd = Bits::cut_new(inst, 11, 7);
+                        let rs2 = Bits::cut_new(inst, 6, 2);
+                        let ret = bitcat!(
+                            rs2,
+                            Bits::new(0, 5),
+                            Bits::new(f3r::ADD_SUB as u64, 3),
+                            rd,
+                            Bits::new(op::AREG as u64, 5),
+                            Bits::new(0b11, 2)
+                        );
+                        return Ok(ret.to_u32());
+                    }
+                    _ => {
+                        return Err(String::from("No such compressed op"));
+                    }
+                },
+                f3co_2::ldsp => {
+                    return Err(String::from("C.LDSP,RV64C is not implemeted."));
+                },
+                f3co_2::ja => {
+                },
+            },
+            _ => {}
+        }
+
+        return Err(String::from("uncompress error"));
     }
     fn exec_rv32(&mut self, inst: u32) -> Result<(), String> {
         match rv32::get_op(inst) {
@@ -262,7 +371,7 @@ impl Cpu {
                 self.pc += rv32::get_imm_jal(inst) as u64;
                 if rv32::get_rd(inst) == 1 {
                     //this is subroutine call
-                    self.sstack.push(self.pc);
+                    self.sstack.push(self.pc)?;
                 }
                 println!(
                     "JAL x{:x}, 0x{:x}",
