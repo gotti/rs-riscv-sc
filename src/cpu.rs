@@ -95,13 +95,17 @@ mod exception {
     pub const mret: u32 = 0b001100000010;
 }
 
+mod f3co_1 {
+    pub const li: u32 = 0b010;
+    pub const lui: u32 = 0b011;
+}
+
 mod f3co_2 {
     pub const slli: u32 = 0b000;
     pub const jal: u32 = 0b001;
     pub const lwsp: u32 = 0b010;
-    pub const mv: u32 = 0b100;
+    pub const mv_ja: u32 = 0b100;
     pub const ldsp: u32 = 0b011;
-    pub const ja: u32 = 0b100;
     pub const swsp: u32 = 0b110;
     pub const sdsp: u32 = 0b111;
 }
@@ -237,6 +241,7 @@ impl Cpu {
 
     fn fetch(&mut self) -> (u64, u64) {
         let inst = match self.len {
+            2 => self.mmu.read_nbytes(self.pc as u32 as u64, 2),
             4 => self.mmu.read_nbytes(self.pc as u32 as u64, 4),
             _ => 999999999999,
         };
@@ -250,17 +255,39 @@ impl Cpu {
         match op_length {
             2 => {
                 //TODO: implement compressed op
-                Err(String::from("Not implemented compressed op"))
+                println!("pc={:x},inst={:x}",self.pc, inst);
+                self.exec_rv32(self.uncompress(inst as u32)?)
             }
             4 => self.exec_rv32(inst as u32),
             8 => Err(String::from("Not implemented rv64")),
             _ => Err(String::from("Invalid xlen")),
         }
     }
-    fn uncompress(inst: u32) -> Result<u32, String> {
+    fn uncompress(&self, inst: u32) -> Result<u32, String> {
+        let rd = Bits::cut_new(inst, 11, 7);
+        let rs = Bits::cut_new(inst, 6, 2);
         match rv32::get_bits(inst, 1, 0) {
-            0 => {}
-            1 => {}
+            0 => {
+                return Err(String::from("No such inst 0"));
+            },
+            1 => match rv32::get_bits(inst, 15, 13) {
+                f3co_1::li => {
+                    let imm = bitcat!(Bits::cut_new(inst, 12, 12), Bits::cut_new(inst, 6, 2));
+                    let ret = bitcat!(
+                        imm,
+                        Bits::new(0, 8),
+                        rd,
+                        Bits::new(f3i::ADDI as u64, 5),
+                        Bits::new(0b11, 2)
+                    );
+                    println!("{:b}",ret.to_u32());
+                    return Ok(ret.to_u32())
+                }
+                _ => {
+                    println!("{}",rv32::get_bits(inst, 15, 13));
+                    return Err(String::from("no such inst"));
+                }
+            },
             2 => match rv32::get_bits(inst, 15, 13) {
                 f3co_2::slli => {
                     let rd = bitutils::Bits::cut_new(inst, 11, 7);
@@ -294,13 +321,13 @@ impl Cpu {
                     let ret = bitcat!(
                         imm.cut(20, 20),
                         imm.cut(10, 1),
-                        imm.cut(11,11),
+                        imm.cut(11, 11),
                         imm.cut(19, 12),
                         Bits::new(1, 5),
                         Bits::new(op::JAL as u64, 5),
                         Bits::new(0b11, 2)
                     );
-                    return Ok(ret.to_u32())
+                    return Ok(ret.to_u32());
                 }
                 f3co_2::lwsp => {
                     let rd = bitutils::Bits::cut_new(inst, 11, 7);
@@ -320,31 +347,64 @@ impl Cpu {
                     );
                     return Ok(ret.to_u32());
                 }
-                f3co_2::mv => match rv32::get_bits(inst, 12, 12) {
-                    0 => {
-                        let rd = Bits::cut_new(inst, 11, 7);
-                        let rs2 = Bits::cut_new(inst, 6, 2);
-                        let ret = bitcat!(
-                            rs2,
-                            Bits::new(0, 5),
-                            Bits::new(f3r::ADD_SUB as u64, 3),
-                            rd,
-                            Bits::new(op::AREG as u64, 5),
-                            Bits::new(0b11, 2)
-                        );
-                        return Ok(ret.to_u32());
+                f3co_2::mv_ja => {
+                    let rd = Bits::cut_new(inst, 11, 7);
+                    let rs = Bits::cut_new(inst, 6, 2);
+                    match rv32::get_bits(inst, 12, 12) {
+                        0 => match rd.to_u32() {
+                            0 => {
+                                //jr
+                                let ret = bitcat!(
+                                    rs,
+                                    Bits::new(0, 8),
+                                    Bits::new(op::JALR as u64, 5),
+                                    Bits::new(0b11, 2)
+                                );
+                                return Ok(ret.to_u32());
+                            }
+                            _ => {
+                                let ret = bitcat!(
+                                    rs,
+                                    Bits::new(0, 5),
+                                    Bits::new(f3r::ADD_SUB as u64, 3),
+                                    rd,
+                                    Bits::new(op::AREG as u64, 5),
+                                    Bits::new(0b11, 2)
+                                );
+                                return Ok(ret.to_u32());
+                            }
+                        },
+                        1 => match rd.to_u32() {
+                            0 => {
+                                //jalr
+                                let ret = bitcat!(
+                                    rs,
+                                    Bits::new(1, 5),
+                                    Bits::new(0, 3),
+                                    Bits::new(op::JALR as u64, 5),
+                                    Bits::new(0b11, 2)
+                                );
+                                return Ok(ret.to_u32());
+                            }
+                            _ => {
+                                return Err(String::from("No such compressed op"));
+                            }
+                        },
+                        _ => {
+                            return Err(String::from("No such compressed op"));
+                        }
                     }
-                    _ => {
-                        return Err(String::from("No such compressed op"));
-                    }
-                },
+                }
                 f3co_2::ldsp => {
                     return Err(String::from("C.LDSP,RV64C is not implemeted."));
-                },
-                f3co_2::ja => {
-                },
+                }
+                _ => {
+                    return Err(String::from("No such compressed op"));
+                }
             },
-            _ => {}
+            _ => {
+                return Err(String::from("No such compressed op"));
+            }
         }
 
         return Err(String::from("uncompress error"));
