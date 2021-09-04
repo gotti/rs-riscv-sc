@@ -7,7 +7,7 @@ use crate::{
     register::Register,
     shadowstack::ShadowStack,
 };
-use std::{io, str::FromStr};
+use std::{io, ops::Add, str::FromStr};
 
 mod op {
     pub const LUDI: u32 = 0b01101;
@@ -98,6 +98,7 @@ mod exception {
 mod f3co_1 {
     pub const li: u32 = 0b010;
     pub const lui: u32 = 0b011;
+    pub const beqz: u32 = 0b110;
 }
 
 mod f3co_2 {
@@ -255,7 +256,7 @@ impl Cpu {
         match op_length {
             2 => {
                 //TODO: implement compressed op
-                println!("pc={:x},inst={:x}",self.pc, inst);
+                println!("pc={:x},inst={:x}", self.pc, inst);
                 self.exec_rv32(self.uncompress(inst as u32)?)
             }
             4 => self.exec_rv32(inst as u32),
@@ -269,7 +270,7 @@ impl Cpu {
         match rv32::get_bits(inst, 1, 0) {
             0 => {
                 return Err(String::from("No such inst 0"));
-            },
+            }
             1 => match rv32::get_bits(inst, 15, 13) {
                 f3co_1::li => {
                     let imm = bitcat!(Bits::cut_new(inst, 12, 12), Bits::cut_new(inst, 6, 2));
@@ -280,11 +281,36 @@ impl Cpu {
                         Bits::new(f3i::ADDI as u64, 5),
                         Bits::new(0b11, 2)
                     );
-                    println!("{:b}",ret.to_u32());
-                    return Ok(ret.to_u32())
+                    println!("{:b}", ret.to_u32());
+                    return Ok(ret.to_u32());
+                }
+                f3co_1::beqz => {
+                    println!("c.beqz");
+                    let imm = bitcat!(
+                        Bits::cut_new(inst, 12, 12),
+                        Bits::cut_new(inst, 6, 5),
+                        Bits::cut_new(inst, 2, 2),
+                        Bits::cut_new(inst, 11, 10),
+                        Bits::cut_new(inst, 4, 3),
+                        Bits::new(0, 1)
+                    );
+                    let rs = Bits::cut_new(inst, 9, 7).expand(5).add(Bits::new(8, 5));
+                    let ret = bitcat!(
+                        imm.cut(12, 12),
+                        imm.cut(10, 5),
+                        rs,
+                        Bits::new(0, 5),
+                        Bits::new(0, 3),
+                        imm.cut(4, 1),
+                        imm.cut(11, 11),
+                        Bits::new(op::BRANCH as u64, 5),
+                        Bits::new(0b11, 2)
+                    );
+                    println!("uncompress={:x}",ret.to_u32());
+                    Ok(ret.to_u32())
                 }
                 _ => {
-                    println!("{}",rv32::get_bits(inst, 15, 13));
+                    println!("{}", rv32::get_bits(inst, 15, 13));
                     return Err(String::from("no such inst"));
                 }
             },
@@ -406,8 +432,6 @@ impl Cpu {
                 return Err(String::from("No such compressed op"));
             }
         }
-
-        return Err(String::from("uncompress error"));
     }
     fn exec_rv32(&mut self, inst: u32) -> Result<(), String> {
         match rv32::get_op(inst) {
@@ -461,6 +485,7 @@ impl Cpu {
             }
             op::BRANCH => match rv32::get_funct3(inst) {
                 f3b::BEQ => {
+                    println!("BEQ {}, {}, {:x}", rv32::get_rs1(inst), rv32::get_rs2(inst), rv32::get_imm_branch(inst));
                     if self.register.read(rv32::get_rs1(inst), self.len)?
                         == self.register.read(rv32::get_rs2(inst), self.len)?
                     {
