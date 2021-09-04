@@ -47,6 +47,12 @@ impl Bits {
     pub fn expand(&self, len: usize) -> Self{
         Self{data: self.data, len}
     }
+    pub fn get_len(&self) -> usize{
+        self.len
+    }
+    fn get_data(&self) -> u64 {
+        self.data
+    }
 }
 
 #[test]
@@ -62,6 +68,14 @@ fn test_shiftadd(){
     assert!(b.to_u32()==63);
 }
 
+#[test]
+fn test_expand(){
+    let b = Bits::new(7,3).expand(5).shiftadd(Bits::new(7,3));
+    assert!(b.get_len() == 8);
+    println!("{}",b.to_u32());
+    assert!(b.get_data() == 63);
+}
+
 impl ops::Add<Bits> for Bits {
     type Output = Bits;
     fn add(self, _rhs: Bits) -> Bits {
@@ -70,7 +84,7 @@ impl ops::Add<Bits> for Bits {
         } else {
             _rhs.len
         };
-        let data = (self.data + _rhs.data) & (1 << len - 1);
+        let data = (self.data + _rhs.data) & ((1 << len) - 1);
         return Bits { data, len };
     }
 }
