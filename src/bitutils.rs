@@ -11,7 +11,7 @@ macro_rules! bitcat {
         {
             let mut temp_bits = Bits::blank();
             $(
-                temp_bits.shiftadd($x);
+                temp_bits = temp_bits.shiftadd($x);
             )*
             temp_bits
         }
@@ -44,6 +44,22 @@ impl Bits {
             self.data as u32
         }
     }
+    pub fn expand(&self, len: usize) -> Self{
+        Self{data: self.data, len}
+    }
+}
+
+#[test]
+fn test_new(){
+    let b = Bits::new(7,3);
+    assert!(b.to_u32()==7);
+}
+#[test]
+fn test_shiftadd(){
+    let mut b = Bits::new(7, 3);
+    b = b.shiftadd(Bits::new(7,3));
+    println!("{:x}",b.to_u32());
+    assert!(b.to_u32()==63);
 }
 
 impl ops::Add<Bits> for Bits {
