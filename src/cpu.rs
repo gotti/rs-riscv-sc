@@ -231,10 +231,34 @@ impl Cpu {
                 } else {
                     print!("{:x?}\t", k);
                 }
-                if i % 8 == 3 {
+                if i % 8 == 7 {
                     println!("");
                 }
             }
+            let sp = match self.register.read(2,self.len) {
+                Ok(t) => t,
+                Err(s) => {
+                    println!("{:?}", s);
+                    0
+                }
+            };
+            println!("---stack---");
+            if sp > 4 {
+            for i in (sp/4-64)..(sp/4+64) {
+                print!(
+                    "{:#x}: {:>02x}{:>02x}{:>02x}{:>02x}",
+                    i*4,
+                    self.mmu.read_nbytes(i*4, 1),
+                    self.mmu.read_nbytes(i*4 + 1, 1),
+                    self.mmu.read_nbytes(i*4 + 2, 1),
+                    self.mmu.read_nbytes(i*4 + 3, 1)
+                );
+                if i==sp{
+                    print!("<- sp")
+                }
+                println!();
+            }}
+            println!("---stack---");
             if old_pc == self.pc {
                 self.pc += op_len;
             }
@@ -457,12 +481,12 @@ impl Cpu {
             op::JAL => {
                 self.register
                     .write(rv32::get_rd(inst), self.pc + 4, self.len)?;
-                self.pc += rv32::get_imm_jal(inst) as u64;
                 if rv32::get_rd(inst) == 1 {
                     //this is subroutine call
-                    println!("@subroutine call! push {:x} to sstack!@",self.pc);
-                    self.sstack.push(self.pc)?;
+                    println!("@subroutine call! push {:x} to shadow stack!@", self.pc + 4);
+                    self.sstack.push(self.pc + 4)?;
                 }
+                self.pc += rv32::get_imm_jal(inst) as u64;
                 println!(
                     "JAL x{:x}, 0x{:x}",
                     rv32::get_rd(inst),
@@ -485,8 +509,9 @@ impl Cpu {
                         self.pc = (self.register.read(rv32::get_rs1(inst), self.len)?
                             + rv32::get_bits_extended(inst, 31, 20) as u64)
                             & !1;
+                        println!("@@@ shadow stack match! @@@\n ret to {:#x}", target);
                     } else {
-                        return Err(String::from(format!("@@@ shadow stack mismatch! @@@\n ret to {:#x}, however, shadow stack value is {:#x}",target,sv)));
+                        return Err(String::from(format!("@@@ shadow stack mismatch! @@@\ntrying to ret to 0x{:x}, however, shadow stack value is {:#x}",target,sv)));
                     }
                 }
             }
@@ -505,6 +530,8 @@ impl Cpu {
                     }
                 }
                 f3b::BNE => {
+                    println!("rsv{}",self.register.read(rv32::get_rs1(inst), self.len)?);
+                    println!("rsv{}",self.register.read(rv32::get_rs2(inst), self.len)?);
                     if self.register.read(rv32::get_rs1(inst), self.len)?
                         != self.register.read(rv32::get_rs2(inst), self.len)?
                     {
@@ -513,6 +540,7 @@ impl Cpu {
                             rv32::sign_extend(rv32::get_imm_branch(inst), 12)
                         );
                         self.pc += rv32::sign_extend(rv32::get_imm_branch(inst), 12) as u64;
+                        self.pc = self.pc & 0xffffffff;
                     }
                 }
                 f3b::BLT => {
@@ -566,22 +594,23 @@ impl Cpu {
                         .write(rv32::get_rs1(inst), data as u64, self.len)?;
                 }
                 f3l::LW => {
-                    println!("lw");
                     let offset = rv32::get_bits_extended(inst, 31, 20);
                     let address =
                         (self.register.read(rv32::get_rs1(inst), self.len)? as u32) + offset;
                     let data =
-                        rv32::sign_extend(self.mmu.read_nbytes(address as u64, 2) as u32, 31);
+                        rv32::sign_extend(self.mmu.read_nbytes(address as u64, 4) as u32, 31);
+                    println!("lw x{} x{} = 0x{:x} = {}", rv32::get_rd(inst), rv32::get_rs1(inst),address, data);
                     self.register
-                        .write(rv32::get_rs1(inst), data as u64, self.len)?;
+                        .write(rv32::get_rd(inst), data as u64, self.len)?;
                 }
                 f3l::LBU => {
                     let offset = rv32::get_bits_extended(inst, 31, 20);
                     let address =
                         (self.register.read(rv32::get_rs1(inst), self.len)? as u32) + offset;
+                    println!("lbu rd={:}, rs1={:}, adr=0x{:}, offset={:}",rv32::get_rd(inst),rv32::get_rs1(inst), address, offset);
                     let data = self.mmu.read_nbytes(address as u64, 1) as u32;
                     self.register
-                        .write(rv32::get_rs1(inst), data as u64, self.len)?;
+                        .write(rv32::get_rd(inst), data as u64, self.len)?;
                 }
                 f3l::LHU => {
                     let offset = rv32::get_bits_extended(inst, 31, 20);
@@ -613,6 +642,8 @@ impl Cpu {
                     );
                 }
                 f3s::SW => {
+                    println!("SW x{}, {}", rv32::get_rs2(inst),((
+                    self.register.read(rv32::get_rs1(inst), self.len)? + rv32::sign_extend(rv32::get_imm_st(inst), 11) as u64) as u32 as u64));
                     self.mmu.write_4byte(
                         (self.register.read(rv32::get_rs1(inst), self.len)?
                             + rv32::sign_extend(rv32::get_imm_st(inst), 11) as u64)
@@ -692,10 +723,13 @@ impl Cpu {
                     )?;
                 }
                 f3i::SLLI => {
+                    println!("slli");
+                    let shamt = rv32::get_bits(inst, 31, 20);
+                    println!("{} {}",shamt, ((self.register.read(rv32::get_rs1(inst), self.len)? as u32)&((1<<(32-shamt))-1)));
                     self.register.write(
                         rv32::get_rd(inst),
-                        ((self.register.read(rv32::get_rs1(inst), self.len)? as u32)
-                            << (rv32::get_bits(inst, 31, 20))) as u64,
+                        (((self.register.read(rv32::get_rs1(inst), self.len)? as u32)&((1<<(32-shamt))-1))
+                            << shamt) as u64,
                         self.len,
                     )?;
                 }
