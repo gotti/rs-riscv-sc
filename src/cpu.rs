@@ -295,6 +295,7 @@ impl Cpu {
                         Bits::new(0, 1)
                     );
                     let rs = Bits::cut_new(inst, 9, 7).expand(5).add(Bits::new(8, 5));
+                    println!("{}",rs.to_u32());
                     let ret = bitcat!(
                         imm.cut(12, 12),
                         imm.cut(10, 5),
@@ -306,7 +307,7 @@ impl Cpu {
                         Bits::new(op::BRANCH as u64, 5),
                         Bits::new(0b11, 2)
                     );
-                    println!("uncompress={:x}",ret.to_u32());
+                    println!("uncompress={:x}",rs.to_u32());
                     Ok(ret.to_u32())
                 }
                 _ => {
