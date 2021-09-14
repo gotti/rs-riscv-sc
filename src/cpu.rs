@@ -241,7 +241,7 @@ impl Cpu {
                     println!("{:?}", s);
                     0
                 }
-            };
+            };/*
             println!("---stack---");
             if sp > 4 {
             for i in (sp/4-64)..(sp/4+64) {
@@ -261,7 +261,7 @@ impl Cpu {
             println!("---stack---");
             if old_pc == self.pc {
                 self.pc += op_len;
-            }
+            }*/
         }
         Ok(())
     }
