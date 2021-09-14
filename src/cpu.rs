@@ -118,11 +118,13 @@ pub trait R2R {
 struct RegisterInst {
     exec: fn(&Self, State, &Register) -> Result<Register, String>,
 }
+
 impl R2R for RegisterInst {
     fn exec_register(&self, state: State, reg: &Register) -> Result<Register, String> {
         (self.exec)(&self, state, reg)
     }
 }
+
 const add: RegisterInst = RegisterInst {
     exec: |sel, state, reg| {
         let mut r = reg.clone();
@@ -247,7 +249,8 @@ impl Cpu {
             _ => 999999999999,
         };
         let op_length = parse_inst_length(inst);
-        println!("inst: {:#x}", inst);
+        let op_visible = bitcat!(Bits::new(inst, 8 * op_length as usize));
+        println!("\ninst: {:#x}_{:}", op_visible.to_u32(), op_length);
         println!("pc  : {:#x}", self.pc);
         (inst, op_length)
     }
@@ -294,8 +297,9 @@ impl Cpu {
                         Bits::cut_new(inst, 4, 3),
                         Bits::new(0, 1)
                     );
+                    println!("imm={}", imm.to_u32());
                     let rs = Bits::cut_new(inst, 9, 7).expand(5).add(Bits::new(8, 5));
-                    println!("{}",rs.to_u32());
+                    println!("{}", rs.to_u32());
                     let ret = bitcat!(
                         imm.cut(12, 12),
                         imm.cut(10, 5),
@@ -307,7 +311,7 @@ impl Cpu {
                         Bits::new(op::BRANCH as u64, 5),
                         Bits::new(0b11, 2)
                     );
-                    println!("uncompress={:x}",rs.to_u32());
+                    println!("uncompress={:x}", rs.to_u32());
                     Ok(ret.to_u32())
                 }
                 _ => {
@@ -456,6 +460,7 @@ impl Cpu {
                 self.pc += rv32::get_imm_jal(inst) as u64;
                 if rv32::get_rd(inst) == 1 {
                     //this is subroutine call
+                    println!("@subroutine call! push {:x} to sstack!@",self.pc);
                     self.sstack.push(self.pc)?;
                 }
                 println!(
@@ -475,18 +480,24 @@ impl Cpu {
                     && rv32::get_bits(inst, 31, 20) == 0
                 {
                     //ret
-                    if target == self.sstack.pop()? {
+                    let sv = self.sstack.pop()?;
+                    if target == sv {
                         self.pc = (self.register.read(rv32::get_rs1(inst), self.len)?
                             + rv32::get_bits_extended(inst, 31, 20) as u64)
                             & !1;
                     } else {
-                        return Err(String::from("@@@ shadow stack mismatch @@@"));
+                        return Err(String::from(format!("@@@ shadow stack mismatch! @@@\n ret to {:#x}, however, shadow stack value is {:#x}",target,sv)));
                     }
                 }
             }
             op::BRANCH => match rv32::get_funct3(inst) {
                 f3b::BEQ => {
-                    println!("BEQ {}, {}, {:x}", rv32::get_rs1(inst), rv32::get_rs2(inst), rv32::get_imm_branch(inst));
+                    println!(
+                        "BEQ {}, {}, {:x}",
+                        rv32::get_rs1(inst),
+                        rv32::get_rs2(inst),
+                        rv32::get_imm_branch(inst)
+                    );
                     if self.register.read(rv32::get_rs1(inst), self.len)?
                         == self.register.read(rv32::get_rs2(inst), self.len)?
                     {
@@ -555,6 +566,7 @@ impl Cpu {
                         .write(rv32::get_rs1(inst), data as u64, self.len)?;
                 }
                 f3l::LW => {
+                    println!("lw");
                     let offset = rv32::get_bits_extended(inst, 31, 20);
                     let address =
                         (self.register.read(rv32::get_rs1(inst), self.len)? as u32) + offset;

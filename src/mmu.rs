@@ -16,7 +16,7 @@ impl Mmu {
         for i in 0..n {
             result += (self.mem[i + p] as u64) << (8 * i);
         }
-        result
+        return result
     }
     pub fn write_byte(&mut self, p: u64, data: u8) {
         let p: usize = p as usize;

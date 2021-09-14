@@ -27,7 +27,8 @@ fn main() -> io::Result<()> {
     let mut f = File::open(f)?;
     let mut buf = Vec::new();
     f.read_to_end(&mut buf)?;
-    let mut memory: Vec<u8> = Vec::with_capacity(1000);
+    let mut memory: Vec<u8> = vec![0; 8192];
+    buf.append(&mut memory);
     let mut mmu = Mmu::new(buf, test_mode);
     let mut csr = Csr::new([0; 4096]);
     let mut reg = Register::new([0; 32]);
