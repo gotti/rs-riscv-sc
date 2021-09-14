@@ -19,19 +19,19 @@ macro_rules! bitcat {
 }
 impl Bits {
     pub fn blank() -> Self {
-        return Self { data: 0, len: 0 };
+        return Self { data: 0, len: 0 }.fit();
     }
     pub fn new(data: u64, len: usize) -> Self {
-        return Self { data, len };
+        return Self { data, len }.fit();
     }
     pub fn shiftadd(&mut self, s: Self) -> Self {
-        Self{data:(self.data<<s.len)+s.data,len:self.len+s.len}
+        Self{data:(self.data<<s.len)+s.data,len:self.len+s.len}.fit()
     }
     pub fn cut_new(data:u32, msb: usize, lsb: usize) -> Self{
-        Bits{data: ((data >> lsb) & ((1 << (msb - lsb + 1)) - 1)) as u64, len: msb-lsb+1}
+        Bits{data: ((data >> lsb) & ((1 << (msb - lsb + 1)) - 1)) as u64, len: msb-lsb+1}.fit()
     }
     pub fn cut(&self, msb: usize, lsb: usize) -> Self{
-        Bits{data: ((self.data >> lsb) & ((1 << (msb - lsb + 1)) - 1)) as u64, len: msb-lsb+1}
+        Bits{data: ((self.data >> lsb) & ((1 << (msb - lsb + 1)) - 1)) as u64, len: msb-lsb+1}.fit()
     }
     pub fn to_u32(&self) -> u32{
         self.data as u32
@@ -45,13 +45,16 @@ impl Bits {
         }
     }
     pub fn expand(&self, len: usize) -> Self{
-        Self{data: self.data, len}
+        Self{data: self.data, len}.fit()
     }
     pub fn get_len(&self) -> usize{
         self.len
     }
     fn get_data(&self) -> u64 {
         self.data
+    }
+    fn fit(&self) -> Self{
+        return Self{data:self.data&((1<<self.len)-1),len:self.len}
     }
 }
 
